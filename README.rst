@@ -26,13 +26,13 @@ Features
 
 * High performance GPU training (courtesy of Theano)
 * Quick start tools to instantly get started training on `inexpensive <http://aws.amazon.com/ec2/pricing/>`_ Amazon EC2 GPU instances.
-* Implementions of important new techniques recently reported in the literature:
+* Implementations of important new techniques recently reported in the literature:
     * `Batch Normalization <http://arxiv.org/pdf/1502.03167v3.pdf>`_
     * `Parametric ReLU <http://arxiv.org/pdf/1502.01852.pdf>`_ activation function,
     * `Adam <http://arxiv.org/pdf/1412.6980v4.pdf>`_ optimization
     * `AdaDelta <http://arxiv.org/pdf/1212.5701v1.pdf>`_ optimization
     * etc.
-* Implementions of standard deep learning techniques:
+* Implementations of standard deep learning techniques:
     * Stochastic Gradient Descent with Momentum
     * Dropout
     * convolutions with max-pooling using overlapping windows
@@ -86,7 +86,7 @@ Short Term Goals
 
 * Implement popular RNN techniques.
 * Integrate with Amazon EC2 clustering software (such as `StarCluster <http://star.mit.edu/cluster/>`_).
-* Integrate with hyperparameter optimization frameworks (such as `Spearmint <https://github.com/JasperSnoek/spearmint>`_ and `hyperopt <https://github.com/hyperopt/hyperopt>`_).
+* Integrate with hyper-parameter optimization frameworks (such as `Spearmint <https://github.com/JasperSnoek/spearmint>`_ and `hyperopt <https://github.com/hyperopt/hyperopt>`_).
 
 =======
 Authors
