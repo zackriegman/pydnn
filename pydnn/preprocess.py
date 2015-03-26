@@ -126,13 +126,16 @@ class Resizer(object):
     def prediction(self, image, size):
         return self._resize(image, size)
 
+    def _resize(self, image, size):
+        raise NotImplemented()
+
 
 class StretchResizer(Resizer):
     """
     Stretches the images to a uniform shape ignoring aspect ratio
     """
     @staticmethod
-    def _resize(image, size):
+    def _resize(self, image, size):
         return scipy.misc.imresize(image, size)
 
 
@@ -242,12 +245,13 @@ def _resize_preserving_aspect_ratio(image, size):
 
     return image
 
+
 class PreserveAspectRatioResizer(Resizer):
     """
     Stretches images to a uniform size preserving aspect ratio.
     """
     @staticmethod
-    def _resize(image, size):
+    def _resize(self, image, size):
         return _resize_preserving_aspect_ratio(image, size)
 
 
