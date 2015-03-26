@@ -21,8 +21,6 @@ import subprocess
 import shlex
 from tools import Dot
 import tools
-import yaml
-import os
 
 config = tools.load_config('AWS_UTIL_CONFIG', __file__, 'aws_util.conf')
 

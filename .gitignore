@@ -1,8 +1,18 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+
+# pycharm ide
 .idea
-/pics/
+
+# temp files
 .~*#
 scratch
+
+# generate sphinx documentation
 docs/_build/
+
+# distribution / packaging
+*.egg-info/
+build/
+dist/
