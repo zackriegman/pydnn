@@ -11,8 +11,13 @@ Welcome to pydnn's documentation!
    :maxdepth: 4
 
    readme
-   pydnn
-   examples
+   pydnn.nn
+   pydnn.preprocess
+   pydnn.data
+   pydnn.aws_util
+   pydnn.img_util
+   pydnn.tools
+   examples.plankton
 
 * :ref:`genindex`
 * :ref:`modindex`
