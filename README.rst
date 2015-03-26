@@ -39,6 +39,18 @@ Features
     * ReLU/Tanh/sigmoid activation functions
     * etc.
 
+=============
+Documentation
+=============
+
+http://pydnn.readthedocs.org/en/latest/index.html
+
+============
+Installation
+============
+
+pip install pydnn
+
 =====
 Usage
 =====
