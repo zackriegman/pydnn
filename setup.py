@@ -13,7 +13,7 @@ setup(
         'Development Status :: 2 - Pre-Alpha',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.4',
-        'License :: OSI Approved :: MIT License'
+        'License :: OSI Approved :: MIT License',
         'Environment :: Console',
         'Intended Audience :: Science/Research',
         'Intended Audience :: Developers',
