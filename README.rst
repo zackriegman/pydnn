@@ -1,8 +1,8 @@
-********************************************
-pydnn: deep neural network library in Python
-********************************************
+******************************************************************************
+pydnn: High performance GPU neural network library for deep learning in Python
+******************************************************************************
 
-pydnn is a deep neural network library written in Python using `Theano <http://deeplearning.net/software/theano/>`_ (symbolic math and optimizing compiler package).  I wrote it as a learning project while competing in `Kaggle's National Data Science Bowl <http://www.datasciencebowl.com/>`_ in March 2015 (where it produced an entry finishing in the `top 6% <http://www.kaggle.com/c/datasciencebowl/leaderboard/private>`_) and plan to continue developing it by adding support for the most important deep learning techniques (including RNNs).
+pydnn is a deep neural network library written in Python using `Theano <http://deeplearning.net/software/theano/>`_ (symbolic math and optimizing compiler package).  It was written for `Kaggle's National Data Science Bowl <http://www.datasciencebowl.com/>`_ competition in March 2015, where it produced an entry finishing in the `top 6% <http://www.kaggle.com/c/datasciencebowl/leaderboard/private>`_.  Continued development is planned, including support for even more of the most important deep learning techniques (RNNs...)
 
 .. contents::
 
