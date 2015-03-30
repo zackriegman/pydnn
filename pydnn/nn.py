@@ -1180,7 +1180,11 @@ class NN(object):
         pathway (the pathway by which merge_pathways is called) then make_givens
         will look through self.layers and not find any dropout or batch normalization
         layers, and will thus not include the train_switch.  At least Theano would
-        probably throw an exception in that case.
+        probably throw an exception in that case.  However a better way to do it
+        would be this:  "X in theano.gof.graph.ancestors([Y])" (see
+        https://groups.google.com/forum/#!topic/theano-users/MSq-oPhvUoE)
+        to test whether training_switch is in the graph.  Then don't even need
+        to bother with keeping a list of layers at all...
         """
         if num is None:
             new = copy.copy(self)
@@ -1461,6 +1465,9 @@ class NN(object):
         else:
             assert training is False
 
+        # TODO:  use "X in theano.gof.graph.ancestors([Y])" (see
+        # https://groups.google.com/forum/#!topic/theano-users/MSq-oPhvUoE)
+        # instead
         if any([layer.__class__ in (_DropoutLayer, _BatchNormalizationLayer)
                 for layer in self.layers]):
             if training:
