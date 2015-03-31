@@ -19,7 +19,6 @@ from time import sleep
 import argparse
 import subprocess
 import shlex
-from tools import Dot
 import tools
 
 config = tools.load_config('AWS_UTIL_CONFIG', __file__, 'aws_util.conf')
@@ -122,7 +121,7 @@ def start_spot_instance(name, image_id=None):
 
     print('waiting for spot instance request fulfillment')
     instance_id = None
-    dotter = Dot()
+    dotter = tools.Dot()
     while instance_id is None:
         dotter.dot()
         sleep(10)
@@ -182,7 +181,7 @@ def save_spot_instance(name, image_name, terminate=True):
         image.deregister()
 
     print('creating new persist image...')
-    dotter = Dot()
+    dotter = tools.Dot()
     image_id = instance.create_image(
         name=image_name,
         description='image used to persist instance',

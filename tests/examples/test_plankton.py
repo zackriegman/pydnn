@@ -190,7 +190,7 @@ class QuickTest8(QuickTest7):
             max_momentum=0.6,
             learning_rate=p.annealer)
 
-        p.activation = nn.PReLULayer
+        p.activation = nn.prelu
 
 
 class QuickTest9(QuickTest):

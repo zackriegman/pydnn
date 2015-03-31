@@ -12,6 +12,7 @@ from theano import tensor as T
 from theano.tensor.signal import downsample
 from theano.tensor.nnet import conv
 from theano.ifelse import ifelse
+import theano.gof.graph
 import theano.printing
 import tools
 from math import ceil
@@ -34,8 +35,8 @@ def _debug(string, var):
 def relu(x):
     """
     Used in conjunction with :class:`_NonLinearityLayer` to create a rectified
-    linear unit layer.  The user does not instantiate this directly, but instead
-    passes the class as the ``activation`` or ``weight_init`` argument to
+    linear unit layer.  The user does not use this directly, but instead
+    passes the function as the ``activation`` or ``weight_init`` argument to
     :class:`NN` either  when creating it or adding
     certain kinds of layers.
 
@@ -46,12 +47,38 @@ def relu(x):
     return x * (x > 0)
     # return T.maximum(x, 0)
 
+def prelu(x):
+    """
+    Parametric Rectified Linear Units:  http://arxiv.org/pdf/1502.01852.pdf.
+
+    Used in conjunction with :class:`_NonLinearityLayer` to create a
+    parametric rectified
+    linear unit layer.  The user does not use this directly, but instead
+    passes the function as the ``activation`` or ``weight_init`` argument to
+    :class:`NN` either  when creating it or adding
+    certain kinds of layers.  (This is just a dummy function provided for
+    API consistency with :func:`relu`, :func:`tanh` and :func:`sigmoid`.  Unlike
+    thise functions it doesn't actually do anything, but merely signals
+    :meth:`add_nonlinearity` to add a parametric rectified nonlinearity)
+
+    Note: Don't use l1/l2 regularization with PReLU.  From the paper:
+    "It is worth noticing that we do not use weight decay
+    (l2 regularization) when updating a_i. A weight decay tends to push a_i
+    to zero, and thus biases PReLU toward ReLU."
+
+    :param float x: input to the rectified linear unit
+    :return: 0 if x < 0, otherwise x
+    :rtype: float
+    """
+
+    return None
+
 
 def tanh(x):
     """
-    Used in conjunction with :class:`_NonLinearityLayer` to create a hyperbolic
-    tangent unit layer.  The user does not instantiate this directly, but instead
-    passes the class as the ``activation`` or ``weight_init`` argument to
+    Used in conjunction with :class:`_NonLinearityLayer` to create a rectified
+    linear unit layer.  The user does not use this directly, but instead
+    passes the function as the ``activation`` or ``weight_init`` argument to
     :class:`NN` either  when creating it or adding
     certain kinds of layers.
 
@@ -64,9 +91,9 @@ def tanh(x):
 
 def sigmoid(x):
     """
-    Used in conjunction with :class:`_NonLinearityLayer` to create a sigmoid  unit
-    layer.  The user does not instantiate this directly, but instead
-    passes the class as the ``activation`` or ``weight_init`` argument to
+    Used in conjunction with :class:`_NonLinearityLayer` to create a rectified
+    linear unit layer.  The user does not use this directly, but instead
+    passes the function as the ``activation`` or ``weight_init`` argument to
     :class:`NN` either  when creating it or adding
     certain kinds of layers.
 
@@ -137,7 +164,7 @@ def _init_weights(layer_name, activation, weights_shape, bias_shape,
     (higher std), but never properly played with this in detail and if it matters
     too much.
     """
-    if activation in (relu, PReLULayer):
+    if activation in (relu, prelu):
         w_values = np.asarray(
             rng.normal(
                 loc=0.,
@@ -176,7 +203,7 @@ def _init_weights(layer_name, activation, weights_shape, bias_shape,
     return w, b
 
 
-def _two_dimensional(inp):
+def _two_dimensional(inp, inp_shape):
     """
     Given an input layer transforms its output to 2 dimensions (or if it is
     already 2 dimensions leaves it be).  Used to prepare input for
@@ -187,107 +214,19 @@ def _two_dimensional(inp):
     :param inp: the input layer
     :return: (transformed input, shape of transformed input)
     """
-    if len(inp.out_shape) == 4:
-        return (inp.output.flatten(2),
-                (inp.out_shape[0],
-                 inp.out_shape[1] * inp.out_shape[2] * inp.out_shape[3]))
-    elif len(inp.out_shape) == 2:
-        return inp.output, inp.out_shape
+    if len(inp_shape) == 4:
+        return (inp.flatten(2),
+                (inp_shape[0],
+                 inp_shape[1] * inp_shape[2] * inp_shape[3]))
+    elif len(inp_shape) == 2:
+        return inp, inp_shape
     else:
         raise Exception('{} dimensional input not supported; input '
                         'must be 2 or 4 dimensions'.format(len(inp.out_shape)))
 
-
-##########
-# Layers #
-##########
-
-class _ConvPoolLayer(object):
-    """
-    A convolution and maxpooling layer.  (No nonlinearity is applied
-    in this layer because when using :class:`BatchNormalizationLayer`, it must
-    come between the matrix multiplies and the nonlinearity.  Instead a
-    :class:`_NonLinearityLayer` or :class:`PReLULayer` layer can be applied
-    after the :class:`_ConvPoolLayer`.)
-
-    :type inp: theano.tensor.dtensor4
-    :param inp: symbolic image tensor, of shape image_shape
-    :type inp_shape: tuple or list of length 4
-    :param inp_shape: (batch size, num input feature maps,
-                         image height, image width)
-    :type filter_shape: tuple or list of length 4
-    :param filter_shape: (number of filters, num input feature maps,
-        filter height, filter width).  "Usually the filters are odd size to have a
-        central pixel. It depends on the calculation cost and the layer of the network
-        that we are considering."
-    :type pool_size: tuple or list of length 2
-    :param pool_size: size of the pools
-    :param pool_stride: stride between pools
-    :param weight_init: activation function that will be applied
-        after the :class:`ConvPoolLayer` (used
-        to determine a weight initialization scheme--one of :func:`relu`,
-        :func:`tanh`, :func:`sigmoid`, or :class:`PReLULayer`)
-    :param use_bias: ``True`` to use bias; ``False`` not to.  (When
-        using batch normalization, bias is redundant and thus should not be used.)
-    :param rng: random number generator
-    """
-
-    def __init__(self, inp, inp_shape, filter_shape, pool_size, pool_stride,
-                 weight_init, use_bias, rng):
-        assert inp_shape[1] == filter_shape[1]
-
-        # there are "num input feature maps * filter height * filter width"
-        # inputs to each hidden unit
-        fan_in = np.prod(filter_shape[1:])
-        # each unit in the lower layer receives a gradient from:
-        # "num output feature maps * filter height * filter width" /
-        # pooling size
-        fan_out = (filter_shape[0] * np.prod(filter_shape[2:]) /
-                   np.prod(pool_size))
-
-        w, b = _init_weights('conv_pool', weight_init, filter_shape,
-                             (filter_shape[0],), fan_in, fan_out, rng, use_bias)
-
-        # convolve input feature maps with filters
-        conv_out = conv.conv2d(
-            input=inp,
-            filters=w,
-            filter_shape=filter_shape,
-            image_shape=inp_shape
-        )
-        conv_out_shape = ((inp_shape[2] - filter_shape[2] + 1),
-                          (inp_shape[3] - filter_shape[3] + 1))
-
-        # downsample each feature map individually, using maxpooling
-        self.output = downsample.max_pool_2d(
-            input=conv_out,
-            ds=pool_size,
-            st=pool_stride,
-            ignore_border=True,
-        )
-
-        pool_shape = (int(ceil((conv_out_shape[0] - pool_size[0] + 1)
-                               / pool_stride[0])),
-                      int(ceil((conv_out_shape[1] - pool_size[1] + 1)
-                               / pool_stride[1])))
-
-        self.out_shape = (inp_shape[0], filter_shape[0],
-                          pool_shape[0], pool_shape[1])
-
-        self.params = [w]
-
-        # add the bias term. Since the bias is a vector (1D array), we first
-        # reshape it to a tensor of shape (1, n_filters, 1, 1). Each bias will
-        # thus be broadcasted across mini-batches and feature map width & height
-        if use_bias:
-            self.output += b.dimshuffle('x', 0, 'x', 'x')
-            self.params += [b]
-
-        print(('| ConvPoolLayer (inp_shape: {}, out_shape: {}, '
-               'filter_shape: {}, pool_size: {}, pool_stride {}, use_bias: {})')
-              .format(inp_shape, self.out_shape, filter_shape,
-                      pool_size, pool_stride, use_bias))
-
+##############
+# Objectives #
+##############
 
 class _LogisticRegression(object):
     """ Multi-class Logistic Regression Class
@@ -367,278 +306,7 @@ class _LogisticRegression(object):
         else:
             raise NotImplementedError()
 
-        print('| LogisticRegression (n_in: {}, n_out: {})'.format(n_in, n_out))
-
-
-class _DropoutLayer(object):
-    """
-    See `the dropout paper <http://arxiv.org/pdf/1207.0580v1.pdf>`_.
-
-    Randomly mask inputs with zeros with frequency ``rate`` while
-    training, and scales inputs by ``1.0 - rate`` when not training
-    so that aggregate signal sent to next layer will be roughly the
-    same during training and inference.
-
-    :param inp: input to this layer (output of previous layer)
-    :param inp_shape: shape of input
-    :param rate: rate at which to mask input values (between 0 and 1)
-    :param train_flag: :attr:`NN.train_flag` (symbolic flag indicating
-        whether training is happening)
-    :param srng: :attr:`NN.snrg` (symbolic random number generator)
-
-    Regarding Theano implementation, see:
-    https://github.com/stencilman/deep_nets_iclr04/blob/master/lib/layer_blocks.py#L174
-    https://groups.google.com/forum/#!topic/theano-users/u81jIHRLzUc
-    https://blog.wtf.sg/2014/07/23/dropout-using-theano/
-    """
-
-    def __init__(self, inp, inp_shape, rate, train_flag, srng):
-        assert 0 <= rate <= 1
-
-        # create a mask in the shape of input with zeros at 'rate' and
-        # ones at '1 - rate', so that when multiplied by input will
-        # zero out elements at the rate 'rate'.
-        # the cast in the following expression is important because:
-        # int * float32 = float64 which pulls things off the gpu
-        mask = T.cast(srng.binomial(n=1, p=1.0 - rate, size=inp_shape),
-                      theano.config.floatX)
-        off_gain = 1.0 - rate
-        # if this is a training pass then multiply by mask to zero out
-        # a portion of the inputs, if it is a prediction pass then scale
-        # inputs down so that in aggregate they are sending as much signal
-        # to the next layer as they would be if the mask was not switched off.
-        # multiplying by T.ones_like seems to ensure that the two branches of
-        # the ifelse output the same Types.  Otherwise theano throws an exception.
-        self.output = inp * ifelse(train_flag, mask, off_gain * T.ones_like(mask))
-        self.out_shape = inp_shape
-
-        print('| DropoutLayer (inp_shape: {}, rate: {})'.format(inp_shape, rate))
-
-
-class _BatchNormalizationLayer(object):
-    """
-    See the `batch normalization paper <http://arxiv.org/pdf/1502.03167v2.pdf>`_
-
-    :param inp: input to this layer (output of previous layer)
-    :param inp_shape: shape of input
-    :param train_flag: :attr:`NN.train_flag` (symbolic flag indicating
-    whether training is happening)
-    :param rng: random number generator
-    :param epsilon: epsilon from the paper (see link above)
-
-    Regarding Theano implementation, see:
-    https://github.com/takacsg84/Lasagne/blob/d5545988e6484d1db4bb54bcfa541ba62e898829/lasagne/layers/bn2.py
-    https://gist.github.com/skaae/5faacedb9c5961136e82
-    https://github.com/benanne/Lasagne/issues/141
-    """
-
-    def __init__(self, inp, inp_shape, train_flag, rng, epsilon=1e-6):
-        if len(inp_shape) == 4:
-            stat_shape = (1, inp_shape[1], 1, 1)
-            broadcast = (True, False, True, True)
-            mean_var_axis = (0, 2, 3)
-        elif len(inp_shape) == 2:
-            stat_shape = (1, inp_shape[1])
-            broadcast = (True, False)
-            mean_var_axis = 0
-        else:
-            raise Exception('input shape not supported; should be 2 or 4 dimensional')
-
-        # for some reason theano gets confused if params are broadcastable during
-        # parameter update calculations (i.e. of AdaDelta) so I make broadcastable
-        # versions for use only here in output calculation, and use
-        # non-broadcastable versions for self.params and self.updates
-        gamma = theano.shared(
-            value=np.asarray(rng.uniform(0.95, 1.05, stat_shape),
-                             dtype=theano.config.floatX),
-            name='gamma_bn',
-            borrow=True)
-        gamma_b = T.patternbroadcast(gamma, broadcast)
-        beta = theano.shared(
-            value=np.zeros(stat_shape, dtype=theano.config.floatX),
-            name='beta_bn',
-            borrow=True)
-        beta_b = T.patternbroadcast(beta, broadcast)
-
-        # using an exponential moving average for inference statistics instead
-        # of calculating them layer by layer for all data.  Ideally the
-        # inference statistics would be calculated with the final training
-        # weights only, but since that seems like a hassle, I'm using a
-        # pretty rapid exponential decay instead.  In practice I'm not sure
-        # how much difference it makes, or whether it is more important to
-        # get a big sample.  Especially as the weights stabilize towards the end
-        # of training, a big sample may be more beneficial.  One easy thing
-        # I could do is make the rate of exponential decay a function of the
-        # number of batches so as weights change slows sample size increases.
-        # It seems like it probably isn't worth being too precise about this given
-        # that the weights of the network are training on batch statistics anyway.
-        ema_means = theano.shared(
-            value=np.zeros(stat_shape, dtype=theano.config.floatX),
-            name='ema_means_bn',
-            borrow=True)
-        ema_vars = theano.shared(
-            value=np.zeros(stat_shape, dtype=theano.config.floatX),
-            name='ema_vars_bn',
-            borrow=True)
-
-        # calculate the training batch normalization
-        batch_means = T.mean(inp, mean_var_axis, keepdims=True)
-        batch_vars = T.sqrt(T.var(inp, mean_var_axis, keepdims=True) + epsilon)
-        batch_norm_x = (inp - batch_means) / batch_vars
-
-        # calculate the inference normalization
-        inf_means = ema_means * 0.65 + batch_means * 0.35
-        inf_vars = ema_vars * 0.65 + batch_vars * 0.35
-        inf_means_b = T.patternbroadcast(inf_means, broadcast)
-        inf_vars_b = T.patternbroadcast(inf_vars, broadcast)
-        inf_norm_x = (inp - inf_means_b) / inf_vars_b
-
-        norm_x = ifelse(train_flag, batch_norm_x, inf_norm_x)
-
-        self.output = gamma_b * norm_x + beta_b
-        self.out_shape = inp_shape
-        self.params = [gamma, beta]
-
-        self.updates = [(ema_means, inf_means),
-                        (ema_vars, inf_vars)]
-
-        print('| BatchNormalizationLayer (inp_shape: {})'.format(inp_shape))
-
-
-class _DataLayer(object):
-    """
-    Inputs a particular data channel into the network.
-
-    :param inp: input to this layer (output of previous layer)
-    :param inp_shape: shape of input
-    :param channel: the name of the channel to input into the network.
-        Channel names are determined by the preprocessor passed to
-        :class:`NN`.
-    """
-
-    def __init__(self, inp, inp_shape, channel):
-        self.output = inp.reshape(inp_shape)
-        self.out_shape = inp_shape
-        print('| DataLayer (inp_shape: {}, channel: {})'.format(inp_shape, channel))
-
-
-class _MergeLayer(object):
-    """
-    Merge multiple layers (from different pathways) together.
-
-    :param inputs: the input to be merged (the output from the pathways
-        being merged); should be 2D tensor (4D Tensors should
-        be flattened first).
-    :param sizes: the sizes of each input (not including the batch size)
-    :param batch_size: the batch size
-    """
-
-    def __init__(self, inputs, sizes, batch_size):
-        self.out_shape = (batch_size, sum(sizes))
-        self.output = T.concatenate(inputs, axis=1)
-
-        print('| MergeLayer (inp_shapes: {}, out_shape: {})'.format(
-            sizes, self.out_shape))
-
-
-class _FullyConnectedLayer(object):
-    """
-    A matrix multiply and addition of biases.  (No nonlinearity is applied
-    in this layer because when using :class:`_BatchNormalizationLayer`, it must
-    come between the matrix multiplies and the nonlinearity.  Instead a
-    :class:`_NonLinearityLayer` or :class:`PReLULayer` layer can be applied
-    after the :class:`_FullyConnectedLayer`.)
-
-    :param rng: random number generator
-    :param inp: input to the :class:`_FullyConnectedLayer` (output of the
-        previous layer)
-    :param n_in: the size of the input (not including the batch size)
-    :param n_out: the size of the output
-    :param weight_init: activation function that will be applied
-        after the :class:`_FullyConnectedLayer` (used
-        to determine a weight initialization scheme--one of :func:`relu`,
-        :func:`tanh`, :func:`sigmoid`, or :class:`PReLULayer`)
-    :param use_bias: ``True`` to use bias; ``False`` not to.  (When
-        using batch normalization, bias is redundant and thus should not be used.)
-    :param w: ignore this; it is here to support autoencoders in the future
-    :param b: ignore this; it is here to support autoencoders in the future
-    """
-
-    def __init__(self, rng, inp, n_in, n_out, batch_size, weight_init,
-                 use_bias, w=None, b=None):
-        if w is None:
-            assert b is None
-            w, b = _init_weights('hidden', weight_init, (n_in, n_out),
-                                 (n_out,), n_in, n_out, rng, use_bias)
-
-        self.out_shape = (batch_size, n_out)
-        self.output = T.dot(inp, w)
-        self.params = [w]
-
-        if use_bias:
-            self.output += b
-            self.params += [b]
-
-        print('| FullyConnectedLayer (n_in: {}, out_shape: {}, use_bias: {})'
-              .format(n_in, self.out_shape, use_bias))
-
-
-class _NonLinearityLayer(object):
-    """ Applies a nonlinearity to the inputs
-
-    :param inp: input to :class:`_NonLinearityLayer` (the output of the previous layer)
-    :param inp_shape: shape of input
-    :param nonlinearity: activation function that will be applied
-        to the input--one of :func:`relu`,
-        :func:`tanh`, :func:`sigmoid`, but not prelu which has its
-        own layer type :class:`PReLULayer`)
-    """
-
-    def __init__(self, inp, inp_shape, nonlinearity):
-        self.output = nonlinearity(inp)
-        self.out_shape = inp_shape
-        print('| NonLinearityLayer (nonlinearity: {})'.format(
-            nonlinearity.__name__))
-
-
-class PReLULayer(object):
-    """
-    Parametric Rectified Linear Units:  http://arxiv.org/pdf/1502.01852.pdf.
-    The user does not instantiate this directly, but instead
-    passes the class as the ``activation`` or ``weight_init`` argument to
-    :class:`NN` either  when creating it or adding
-    certain kinds of layers.
-
-    Note: Don't use l1/l2 regularization with PReLU.  From the paper:
-        "It is worth noticing that we do not use weight decay
-        (l2 regularization) when updating a_i. A weight decay tends to push a_i
-        to zero, and thus biases PReLU toward ReLU."
-    """
-
-    def __init__(self, inp, inp_shape):
-        if len(inp_shape) == 4:
-            a_shape = (1, inp_shape[1], 1, 1)
-            broadcast = (True, False, True, True)
-        elif len(inp_shape) == 2:
-            a_shape = (1, inp_shape[1])
-            broadcast = (True, False)
-        else:
-            raise Exception('input shape not supported; should be 2 or 4 dimensional')
-
-        # for some reason theano gets confused if params are broadcastable during
-        # parameter update calculations (of AdaDelta) so I make broadcastable
-        # versions for use only here in output calculation, and use
-        # non-broadcastable versions for self.params and self.updates
-        a = theano.shared(
-            value=0.25 * np.ones(a_shape, dtype=theano.config.floatX),
-            name='a_PReLU',
-            borrow=True)
-        a_broad = T.patternbroadcast(a, broadcast)
-
-        self.output = T.maximum(0, inp) + a_broad * T.minimum(0, inp)
-        self.out_shape = inp_shape
-        self.params = [a]
-        print('| PReLULayer (inp_shape: {})'.format(inp_shape))
+        print('| logistic regression (n_in: {}, n_out: {})'.format(n_in, n_out))
 
 
 ##################
@@ -1135,15 +803,37 @@ class NN(object):
         self.preprocessor = preprocessor
 
         self.batch_size = batch_size
-        self.layers = [_DataLayer(
+
+        self.out = None
+        self.out_shape = None
+        self.params = []
+        self.updates = []
+        self.objective = None
+
+        self._add_data(
             self.x_symbols.setdefault(channel, T.matrix(channel)),
             [batch_size] + list(self.preprocessor.shape_for(channel)),
-            channel)]
+            channel)
         self.rng = rng
         self.srng = T.shared_randomstreams.RandomStreams(rng.randint(2 ** 30))
         self.activation = activation
         self.num_classes = num_classes
         self.output_dir = output_dir
+
+    def _add_data(self, inp, inp_shape, channel):
+        """
+        Inputs a particular data channel into the network.
+
+        :param inp: input to this layer (output of previous layer)
+        :param inp_shape: shape of input
+        :param channel: the name of the channel to input into the network.
+            Channel names are determined by the preprocessor passed to
+            :class:`NN`.
+        """
+        self.out = inp.reshape(inp_shape)
+        self.out_shape = inp_shape
+        print('| data (inp_shape: {}, channel: {})'.format(inp_shape, channel))
+
 
     def new_pathway(self, channel):
         """
@@ -1156,10 +846,10 @@ class NN(object):
         :return: :class:`NN` to which layers can be separately added
         """
         new = copy.copy(self)
-        new.layers = [_DataLayer(
+        new._add_data(
             self.x_symbols.setdefault(channel, T.matrix(channel)),
             [self.batch_size] + list(self.preprocessor.shape_for(channel)),
-            channel)]
+            channel)
         return new
 
     def split_pathways(self, num=None):
@@ -1175,26 +865,20 @@ class NN(object):
                   (not including the original pathway); otherwise returns a single
                   new pathway.
 
-        TODO: this is broken in at least one way.  If there is a dropout
-        or batch normalization layer in a split pathway but not in the main
-        pathway (the pathway by which merge_pathways is called) then make_givens
-        will look through self.layers and not find any dropout or batch normalization
-        layers, and will thus not include the train_switch.  At least Theano would
-        probably throw an exception in that case.  However a better way to do it
-        would be this:  "X in theano.gof.graph.ancestors([Y])" (see
-        https://groups.google.com/forum/#!topic/theano-users/MSq-oPhvUoE)
-        to test whether training_switch is in the graph.  Then don't even need
-        to bother with keeping a list of layers at all...
+        NOTE: NN.params list is not copied when splitting pathways, meaning that
+        when any pathway adds a layer, the params for that layer are added to
+        the params of all pathways (since there is only one params list).  Normally,
+        this will not cause a problem, however, if a pathway is split but not
+        merged back in to the trunk (and far as I can think of there is no reason
+        to do this) then updates will be generated for parameters that are not
+        in the computation graph and theano will probably throw and exception.  If
+        we consider it an error to split pathways without eventually remerging them,
+        then this is not a problem.
         """
         if num is None:
-            new = copy.copy(self)
-            new.layers = new.layers[:]
-            return new
+            return copy.copy(self)
         else:
-            pathways = [copy.copy(self) for _ in range(num)]
-            for pathway in pathways:
-                pathway.layers = pathway.layers[:]
-            return pathways
+            return [copy.copy(self) for _ in range(num)]
 
     def merge_pathways(self, pathways):
         """
@@ -1206,15 +890,14 @@ class NN(object):
         pathways = [pathways] if isinstance(pathways, NN) else pathways
         inputs, shapes = [], []
         for pathway in [self] + pathways:
-            inp, shape = _two_dimensional(pathway.layers[-1])
+            inp, shape = _two_dimensional(pathway.out, pathway.out_shape)
             inputs += [inp]
             shapes += [shape[1]]
-        layer = _MergeLayer(
-            inputs=inputs,
-            sizes=shapes,
-            batch_size=self.batch_size
-        )
-        self.layers.append(layer)
+        self.out = T.concatenate(inputs, axis=1)
+        self.out_shape = (self.batch_size, sum(shapes))
+
+        print('| merge_pathways (inp_shapes: {}, out_shape: {})'.format(
+            shapes, self.out_shape))
 
     def merge_data_channel(self, channel):
         """
@@ -1225,10 +908,14 @@ class NN(object):
         """
         self.merge_pathways(self.new_pathway(channel))
 
+    ##########
+    # Layers #
+    ##########
+
     def add_conv_pool(self, num_filters, filter_shape, pool_shape,
                       pool_stride=None, weight_init=None, use_bias=True):
         """
-        Adds a convolution and pooling layer to the network (without a
+        Adds a convolution and max pooling layer to the network (without a
         nonlinearity or batch normalization; if those are desired they
         can be added separately, or the convenience method :meth:`add_convolution`
         can be used).
@@ -1250,22 +937,70 @@ class NN(object):
         pool_stride = pool_shape if pool_stride is None else pool_stride
         weight_init = self.activation if weight_init is None else weight_init
 
-        preceding = self.layers[-1]
+        inp = self.out
 
-        assert len(preceding.out_shape) == 4
+        # (batch size, num input feature maps, image height, image width)
+        inp_shape = self.out_shape
 
-        layer = _ConvPoolLayer(
-            inp=preceding.output,
-            inp_shape=preceding.out_shape,
-            filter_shape=(num_filters, preceding.out_shape[1],
-                          filter_shape[0], filter_shape[1]),
-            pool_size=pool_shape,
-            pool_stride=pool_stride,
-            weight_init=weight_init,
-            use_bias=use_bias,
-            rng=self.rng
+        # (number of filters, num input feature maps, filter height, filter width)
+        filter_shape = (num_filters, inp_shape[1],
+                        filter_shape[0], filter_shape[1])
+
+        assert len(inp_shape) == 4
+
+        # there are "num input feature maps * filter height * filter width"
+        # inputs to each hidden unit
+        fan_in = np.prod(filter_shape[1:])
+        # each unit in the lower layer receives a gradient from:
+        # "num output feature maps * filter height * filter width" /
+        # pooling size
+        fan_out = (filter_shape[0] * np.prod(filter_shape[2:]) /
+                   np.prod(pool_shape))
+
+        w, b = _init_weights('conv_pool', weight_init, filter_shape,
+                             (filter_shape[0],), fan_in, fan_out, self.rng, use_bias)
+
+        # convolve input feature maps with filters
+        conv_out = conv.conv2d(
+            input=inp,
+            filters=w,
+            filter_shape=filter_shape,
+            image_shape=inp_shape
         )
-        self.layers.append(layer)
+        conv_out_shape = ((inp_shape[2] - filter_shape[2] + 1),
+                          (inp_shape[3] - filter_shape[3] + 1))
+
+        # downsample each feature map individually, using maxpooling
+        self.out = downsample.max_pool_2d(
+            input=conv_out,
+            ds=pool_shape,
+            st=pool_stride,
+            ignore_border=True,
+        )
+
+        pool_shape = (int(ceil((conv_out_shape[0] - pool_shape[0] + 1)
+                               / pool_stride[0])),
+                      int(ceil((conv_out_shape[1] - pool_shape[1] + 1)
+                               / pool_stride[1])))
+
+        self.out_shape = (inp_shape[0], filter_shape[0],
+                          pool_shape[0], pool_shape[1])
+
+        self.params += [w]
+
+        # add the bias term. Since the bias is a vector (1D array), we first
+        # reshape it to a tensor of shape (1, n_filters, 1, 1). Each bias will
+        # thus be broadcasted across mini-batches and feature map width & height
+        if use_bias:
+            self.out += b.dimshuffle('x', 0, 'x', 'x')
+            self.params += [b]
+
+        print(('| conv_pool (inp_shape: {}, out_shape: {}, '
+               'filter_shape: {}, pool_size: {}, pool_stride {}, use_bias: {})')
+              .format(inp_shape, self.out_shape, filter_shape,
+                      pool_shape, pool_stride, use_bias))
+
+
 
     def add_convolution(self, num_filters, filter_shape, pool_shape,
                         pool_stride=None, activation=None, batch_normalize=True):
@@ -1315,16 +1050,23 @@ class NN(object):
             using batch normalization, bias is redundant and thus should not be used.)
         """
         weight_init = self.activation if weight_init is None else weight_init
-        inp, inp_shape = _two_dimensional(self.layers[-1])
-        layer = _FullyConnectedLayer(
-            rng=self.rng,
-            inp=inp,
-            n_in=inp_shape[1],
-            n_out=num_units,
-            batch_size=self.batch_size,
-            weight_init=weight_init,
-            use_bias=use_bias)
-        self.layers.append(layer)
+        inp, inp_shape = _two_dimensional(self.out, self.out_shape)
+
+        n_in = inp_shape[1]
+
+        w, b = _init_weights('hidden', weight_init, (n_in, num_units),
+                             (num_units,), n_in, num_units, self.rng, use_bias)
+
+        self.out = T.dot(inp, w)
+        self.out_shape = (self.batch_size, num_units)
+        self.params += [w]
+
+        if use_bias:
+            self.out += b
+            self.params += [b]
+
+        print('| fully_connected (n_in: {}, out_shape: {}, use_bias: {})'
+              .format(n_in, self.out_shape, use_bias))
 
     def add_hidden(self, num_units, activation=None, batch_normalize=True):
         """
@@ -1349,61 +1091,169 @@ class NN(object):
         Add a layer which applies a nonlinearity to its inputs.
 
         :param nonlinearity: the activation function to be applied.
-            (One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :class:`PReLULayer`)
+            (One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :func:`prelu`)
         """
-        preceding = self.layers[-1]
 
         if nonlinearity in (relu, tanh, sigmoid):
-            layer = _NonLinearityLayer(
-                inp=preceding.output,
-                inp_shape=preceding.out_shape,
-                nonlinearity=nonlinearity)
-        elif nonlinearity == PReLULayer:
-            layer = PReLULayer(
-                inp=preceding.output,
-                inp_shape=preceding.out_shape)
+            self.out = nonlinearity(self.out)
+            print('| nonlinearity (nonlinearity: {})'.format(
+                nonlinearity.__name__))
+        elif nonlinearity == prelu:
+            if len(self.out_shape) == 4:
+                a_shape = (1, self.out_shape[1], 1, 1)
+                broadcast = (True, False, True, True)
+            elif len(self.out_shape) == 2:
+                a_shape = (1, self.out_shape[1])
+                broadcast = (True, False)
+            else:
+                raise Exception('input shape not supported; should be 2 or 4 dimensional')
+
+            # for some reason theano gets confused if params are broadcastable during
+            # parameter update calculations (of AdaDelta) so I make broadcastable
+            # versions for use only here in output calculation, and use
+            # non-broadcastable versions for self.params and self.updates
+            a = theano.shared(
+                value=0.25 * np.ones(a_shape, dtype=theano.config.floatX),
+                name='a_PReLU',
+                borrow=True)
+            a_broad = T.patternbroadcast(a, broadcast)
+
+            self.out = T.maximum(0, self.out) + a_broad * T.minimum(0, self.out)
+            self.params += [a]
+            print('| nonlinearity (nonlinearity: prelu)'.format(self.out_shape))
         else:
             raise Exception('unsupported nonlinearity:' + nonlinearity)
-
-        self.layers.append(layer)
 
     def add_dropout(self, rate=0.5):
         """
         Add a dropout layer.
 
-        :param float rate: rate at which to randomly zero out inputs
-        """
-        layer = _DropoutLayer(
-            inp=self.layers[-1].output,
-            inp_shape=self.layers[-1].out_shape,
-            rate=rate,
-            train_flag=self.train_flag,
-            srng=self.srng
-        )
-        self.layers.append(layer)
+        See `the dropout paper <http://arxiv.org/pdf/1207.0580v1.pdf>`_.
 
-    def add_batch_normalization(self):
+        Randomly mask inputs with zeros with frequency ``rate`` while
+        training, and scales inputs by ``1.0 - rate`` when not training
+        so that aggregate signal sent to next layer will be roughly the
+        same during training and inference.
+
+        :param float rate: rate at which to randomly zero out inputs
+
+        ..  Regarding Theano implementation, see:
+            https://github.com/stencilman/deep_nets_iclr04/blob/master/lib/layer_blocks.py#L174
+            https://groups.google.com/forum/#!topic/theano-users/u81jIHRLzUc
+            https://blog.wtf.sg/2014/07/23/dropout-using-theano/
+
+        """
+        assert 0 <= rate <= 1
+
+        # create a mask in the shape of input with zeros at 'rate' and
+        # ones at '1 - rate', so that when multiplied by input will
+        # zero out elements at the rate 'rate'.
+        # the cast in the following expression is important because:
+        # int * float32 = float64 which pulls things off the gpu
+        mask = T.cast(self.srng.binomial(n=1, p=1.0 - rate, size=self.out_shape),
+                      theano.config.floatX)
+        # multiplying by T.ones_like seems to ensure that the two branches of
+        # the ifelse output the same Types.  Otherwise theano throws an exception.
+        off_gain = (1.0 - rate) * T.ones_like(mask)
+        # if this is a training pass then multiply by mask to zero out
+        # a portion of the inputs, if it is a prediction pass then scale
+        # inputs down so that in aggregate they are sending as much signal
+        # to the next layer as they would be if the mask was not switched off.
+        self.out *= ifelse(self.train_flag, mask, off_gain)
+
+        print('| dropout (inp_shape: {}, rate: {})'.format(self.out_shape, rate))
+
+    def add_batch_normalization(self, epsilon=1e-6):
         """
         Add a batch normalization layer
+
+        See the `batch normalization paper <http://arxiv.org/pdf/1502.03167v2.pdf>`_
+
+        ..  Regarding Theano implementation, see:
+            https://github.com/takacsg84/Lasagne/blob/d5545988e6484d1db4bb54bcfa541ba62e898829/lasagne/layers/bn2.py
+            https://gist.github.com/skaae/5faacedb9c5961136e82
+            https://github.com/benanne/Lasagne/issues/141
         """
-        layer = _BatchNormalizationLayer(
-            inp=self.layers[-1].output,
-            inp_shape=self.layers[-1].out_shape,
-            train_flag=self.train_flag,
-            rng=self.rng)
-        self.layers.append(layer)
+        if len(self.out_shape) == 4:
+            stat_shape = (1, self.out_shape[1], 1, 1)
+            broadcast = (True, False, True, True)
+            mean_var_axis = (0, 2, 3)
+        elif len(self.out_shape) == 2:
+            stat_shape = (1, self.out_shape[1])
+            broadcast = (True, False)
+            mean_var_axis = 0
+        else:
+            raise Exception('input shape not supported; should be 2 or 4 dimensional')
+
+        # for some reason theano gets confused if params are broadcastable during
+        # parameter update calculations (i.e. of AdaDelta) so I make broadcastable
+        # versions for use only here in output calculation, and use
+        # non-broadcastable versions for self.params and self.updates
+        gamma = theano.shared(
+            value=np.asarray(self.rng.uniform(0.95, 1.05, stat_shape),
+                             dtype=theano.config.floatX),
+            name='gamma_bn',
+            borrow=True)
+        gamma_b = T.patternbroadcast(gamma, broadcast)
+        beta = theano.shared(
+            value=np.zeros(stat_shape, dtype=theano.config.floatX),
+            name='beta_bn',
+            borrow=True)
+        beta_b = T.patternbroadcast(beta, broadcast)
+
+        # using an exponential moving average for inference statistics instead
+        # of calculating them layer by layer for all data.  Ideally the
+        # inference statistics would be calculated with the final
+        # weights only, but since that seems like a hassle, I'm using a
+        # pretty rapid exponential decay instead.  In practice I'm not sure
+        # how much difference it makes, or whether it is more important to
+        # get a big sample.  Especially as the weights stabilize towards the end
+        # of training, a big sample may be more beneficial.  One easy thing
+        # I could do is make the rate of exponential decay a function of the
+        # number of batches so as weights change slows sample size increases.
+        # It seems like it probably isn't worth being too precise about this given
+        # that the weights of the network are training on batch statistics anyway.
+        ema_means = theano.shared(
+            value=np.zeros(stat_shape, dtype=theano.config.floatX),
+            name='ema_means_bn',
+            borrow=True)
+        ema_vars = theano.shared(
+            value=np.zeros(stat_shape, dtype=theano.config.floatX),
+            name='ema_vars_bn',
+            borrow=True)
+
+        # calculate the training batch normalization
+        batch_means = T.mean(self.out, mean_var_axis, keepdims=True)
+        batch_vars = T.sqrt(T.var(self.out, mean_var_axis, keepdims=True) + epsilon)
+        batch_norm_x = (self.out - batch_means) / batch_vars
+
+        # calculate the inference normalization
+        inf_means = ema_means * 0.65 + batch_means * 0.35
+        inf_vars = ema_vars * 0.65 + batch_vars * 0.35
+        inf_means_b = T.patternbroadcast(inf_means, broadcast)
+        inf_vars_b = T.patternbroadcast(inf_vars, broadcast)
+        inf_norm_x = (self.out - inf_means_b) / inf_vars_b
+
+        norm_x = ifelse(self.train_flag, batch_norm_x, inf_norm_x)
+
+        self.out = gamma_b * norm_x + beta_b
+        self.params += [gamma, beta]
+
+        self.updates += [(ema_means, inf_means),
+                         (ema_vars, inf_vars)]
+
+        print('| batch normalization (inp_shape: {})'.format(self.out_shape))
 
     def add_logistic(self):
         """
         Add a logistic classifier (should be the final layer).
         """
-        inp, inp_shape = _two_dimensional(self.layers[-1])
-        layer = _LogisticRegression(
+        inp, inp_shape = _two_dimensional(self.out, self.out_shape)
+        self.objective = _LogisticRegression(
             inp=inp,
             y=self.y,
             n_in=inp_shape[1],
             n_out=self.num_classes)
-        self.layers.append(layer)
 
     def add_mlp(self, num_hidden_units, activation=None):
         """
@@ -1420,13 +1270,10 @@ class NN(object):
         self.add_logistic()
 
     def _get_params_grad(self):
-        return reduce(operator.add, [layer.params for layer in self.layers
-                                     if hasattr(layer, 'params')])
+        return self.params
 
     def _get_params_other(self):
-        tuples = reduce(operator.add, [layer.updates for layer in self.layers
-                                       if hasattr(layer, 'updates')], [])
-        return zip(*tuples)[0] if len(tuples) > 0 else []
+        return zip(*self.updates)[0] if len(self.updates) > 0 else []
 
     def _get_params(self):
         return ([pm.get_value(borrow=False) for pm in self._get_params_grad()],
@@ -1465,21 +1312,11 @@ class NN(object):
         else:
             assert training is False
 
-        # TODO:  use "X in theano.gof.graph.ancestors([Y])" (see
-        # https://groups.google.com/forum/#!topic/theano-users/MSq-oPhvUoE)
-        # instead
-        if any([layer.__class__ in (_DropoutLayer, _BatchNormalizationLayer)
-                for layer in self.layers]):
+        if self.train_flag in theano.gof.graph.ancestors([self.objective.p_y_given_x]):
             if training:
                 givens[self.train_flag] = np.int8(1)
             else:
                 givens[self.train_flag] = np.int8(0)
-                # if training:
-                # givens[self.train_flag_switch] = T.as_tensor_variable(
-                #         1.0, 'train_flag_on')
-                # else:
-                #     givens[self.train_flag_switch] = T.as_tensor_variable(
-                #         -1.0, 'train_flag_off')
         return givens
 
     def train(self, updater, epochs=200, final_epochs=0, l1_reg=0, l2_reg=0):
@@ -1514,8 +1351,6 @@ class NN(object):
         n_test_batches = test_x.values()[0].get_value(
             borrow=True).shape[0] // batch_size
 
-        last_layer = self.layers[-1]
-
         # create a list of all model parameters to be fit by gradient descent
         params = self._get_params_grad()
 
@@ -1524,9 +1359,9 @@ class NN(object):
 
         # the cost we minimize during training is the NLL of the
         # model plus the L1 and L2 regularization
-        cost = last_layer.negative_log_likelihood + l1_reg * l1 + l2_reg * l2
-        multi_class_loss = last_layer.negative_log_likelihood
-        errors = last_layer.errors
+        cost = self.objective.negative_log_likelihood + l1_reg * l1 + l2_reg * l2
+        multi_class_loss = self.objective.negative_log_likelihood
+        errors = self.objective.errors
 
         print('compiling validation and test functions...')
 
@@ -1545,9 +1380,7 @@ class NN(object):
         print('compiling training function...')
 
         updates = updater._get_updates(params, cost)
-        for layer in self.layers:
-            if hasattr(layer, 'updates'):
-                updates += layer.updates
+        updates += self.updates
 
         output = [multi_class_loss, errors]
 
@@ -1705,10 +1538,9 @@ class NN(object):
 
         data = _shared_dataset(data, borrow=True)
 
-        last_layer = self.layers[-1]
         predict_func = theano.function(
             [self.index],
-            (last_layer.y_pred, last_layer.p_y_given_x),
+            (self.objective.y_pred, self.objective.p_y_given_x),
             givens=self._make_givens(False, data)
         )
 
