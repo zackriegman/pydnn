@@ -1,4 +1,4 @@
-pydnn.nn module
+pydnn.neuralnet module
 ===============
 
 .. py:module:: pydnn.neuralnet
