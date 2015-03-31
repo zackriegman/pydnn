@@ -41,7 +41,7 @@ for mod_name in ['numpy',
                  'theano.tensor.nnet',
                  'theano.tensor',
                  'theano.ifelse',
-                 'theano.printing'
+                 'theano.printing',
                  'theano.gof.graph',
 #                 'yaml',
                  'pandas']:
