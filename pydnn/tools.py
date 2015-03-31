@@ -13,8 +13,9 @@ import yaml
 
 def load_config(environ_variable, module_file, default_config):
     default_config = os.path.join(os.path.dirname(module_file), default_config)
-    print default_config
-    return yaml.load(file(os.getenv(environ_variable, default_config)))
+    config = os.getenv(environ_variable, default_config)
+    print('using config: ' + config)
+    return yaml.load(file(config))
 
 
 def send_email(

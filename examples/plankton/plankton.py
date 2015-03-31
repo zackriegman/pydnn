@@ -28,31 +28,31 @@ def write_submission_csv_file(file_name, probs, image_file_names):
 
 
 def generate_submission_file(net, name, num=None):
-        if num is None:
-            num = 130400
+    if num is None:
+        num = 130400
 
-        if num < 130400:
-            batch_size = num
-            num_batches = 1
-        else:
-            batch_size = 16300
-            num_batches = 8
+    if num < 130400:
+        batch_size = num
+        num_batches = 1
+    else:
+        batch_size = 16300
+        num_batches = 8
 
-        probabilities = []
-        files = []
-        dotter = tools.Dot()
-        print('generating probabilities...')
-        for i in range(num_batches):
-            fns, images, = test_set.build(i * batch_size,
-                                                (i + 1) * batch_size)
-            _, probs = net.predict({'images': images})
-            probabilities.append(probs)
-            files += fns
-            dotter.dot(str(i) + ' ')
-        dotter.stop()
-        probabilities = np.row_stack(probabilities)
-        print('writing csv file...')
-        write_submission_csv_file(name, probabilities, files)
+    probabilities = []
+    files = []
+    dotter = tools.Dot()
+    print('generating probabilities...')
+    for i in range(num_batches):
+        fns, images, = test_set.build(i * batch_size,
+                                            (i + 1) * batch_size)
+        _, probs = net.predict({'images': images})
+        probabilities.append(probs)
+        files += fns
+        dotter.dot(str(i) + ' ')
+    dotter.stop()
+    probabilities = np.row_stack(probabilities)
+    print('writing csv file...')
+    write_submission_csv_file(name, probabilities, files)
 
 
 def load_net_and_generate_submission_file(net_name, submission_name):
