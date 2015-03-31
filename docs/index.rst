@@ -11,7 +11,7 @@ Welcome to pydnn's documentation!
    :maxdepth: 4
 
    readme
-   pydnn.nn
+   pydnn.neuralnet
    pydnn.preprocess
    pydnn.data
    pydnn.aws_util

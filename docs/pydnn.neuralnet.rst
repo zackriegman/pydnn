@@ -1,7 +1,7 @@
 pydnn.nn module
 ===============
 
-.. py:module:: pydnn.nn
+.. py:module:: pydnn.neuralnet
 
 Overview
 --------
@@ -68,9 +68,9 @@ Activation Functions (Nonlinearities)
 -------------------------------------
 
 .. autofunction:: relu
+.. autofunction:: prelu
 .. autofunction:: sigmoid
 .. autofunction:: tanh
-.. autoclass:: PReLULayer
 
 .. _Utilities:
 

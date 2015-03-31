@@ -24,32 +24,15 @@ import tools
 config = tools.load_config('AWS_UTIL_CONFIG', __file__, 'aws_util.conf')
 
 
-DEFAULT_NAME = config['ec2']['default_name']
-REGION = config['ec2']['region']
-PEM_NAME = config['ec2']['pem_name']
-MAX_PRICE = config['ec2']['max_price']
-
-FROM = config['email']['from']
-TO = config['email']['to']
-USERNAME = config['email']['username']
-PASSWORD = config['email']['password']
-SMTP = config['email']['smtp']
-
-conn = boto.ec2.connect_to_region(REGION)
-
-if conn is None:
-    raise Exception('connection failed')
-
-
-def get_image_id_by_name(name):
-    image = get_image_by_name(name)
+def get_image_id_by_name(conn, name):
+    image = get_image_by_name(conn, name)
     if image is not None:
         return image.id
     else:
         raise Exception("image '{}' not found".format(name))
 
 
-def get_recent_gpu_price():
+def get_recent_gpu_price(conn):
     def get_price_for_zone(zone):
         recent_prices = conn.get_spot_price_history(
             start_time=(datetime.utcnow()-timedelta(seconds=1)).isoformat(),
@@ -66,15 +49,15 @@ def get_recent_gpu_price():
     return max(prices), min(prices), zones[prices.index(min(prices))]
 
 
-def get_running_instances(name=None):
+def get_running_instances(conn, name=None):
     filters = {'instance-state-name': 'running'}
     if name:
         filters["tag:name"] = name
     return conn.get_only_instances(filters=filters)
 
 
-def get_unique_instance(name):
-    instances = get_running_instances(name)
+def get_unique_instance(conn, name):
+    instances = get_running_instances(conn, name)
     if len(instances) > 1:
         raise Exception('more than one instance fits criteria')
     elif len(instances) == 0:
@@ -83,18 +66,18 @@ def get_unique_instance(name):
         return instances[0]
 
 
-def start_spot_instance(name, image_id=None):
-    if len(get_running_instances(name)) != 0:
+def start_spot_instance(conn, name, image_id=None):
+    if len(get_running_instances(conn, name)) != 0:
         raise Exception("there is already an instance with that name")
 
-    highest_price, lowest_price, lowest_cost_zone = get_recent_gpu_price()
+    highest_price, lowest_price, lowest_cost_zone = get_recent_gpu_price(conn)
     print('highest price: {}'.format(highest_price))
     # bid_price = highest_price + 0.03
-    if MAX_PRICE < lowest_price * 1.5:
+    if config['ec2']['max_price'] < lowest_price * 1.5:
         raise Exception("bid price is less than 1.5 times current prices... too risky")
 
     print('bidding {} max price to instantiate image "{}" in zone "{}"'.format(
-        MAX_PRICE, image_id, lowest_cost_zone))
+        config['ec2']['max_price'], image_id, lowest_cost_zone))
 
     sda1 = boto.ec2.blockdevicemapping.EBSBlockDeviceType()
     sda1.size = 10
@@ -102,7 +85,7 @@ def start_spot_instance(name, image_id=None):
     bdm['/dev/sda1'] = sda1
 
     spot_request = conn.request_spot_instances(
-        price=str(MAX_PRICE),
+        price=str(config['ec2']['max_price']),
         # image_id='ami-9eaa1cf6',  # plain ubuntu
         # image_id='ami-2ca87b44',  # GPU and theano preinstalled
         image_id=image_id,
@@ -110,7 +93,7 @@ def start_spot_instance(name, image_id=None):
         type='one-time',
         valid_from=(datetime.utcnow()+timedelta(seconds=5)).isoformat(),
         valid_until=(datetime.utcnow()+timedelta(minutes=15)).isoformat(),
-        key_name=PEM_NAME,
+        key_name=config['ec2']['pem_name'],
         security_groups=['all'],
         instance_type='g2.2xlarge',
         # instance_type='t2.micro',
@@ -142,11 +125,11 @@ def start_spot_instance(name, image_id=None):
     connect_message = ('connect to instance with "' + login_exec + '" or "' +
                        sftp_exec + '"')
     tools.send_email(
-        from_addr=FROM,
-        to_addr=TO,
-        username=USERNAME,
-        password=PASSWORD,
-        smtp=SMTP,
+        from_addr=config['email']['from'],
+        to_addr=config['email']['to'],
+        username=config['email']['username'],
+        password=config['email']['password'],
+        smtp=config['email']['smtp'],
         subject='Subject: EC2 spot instance "{}" is ready'.format(name),
         body=connect_message
     )
@@ -155,14 +138,15 @@ def start_spot_instance(name, image_id=None):
 
 
 def get_login_exec(instance_ip):
-    return "ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=100 ubuntu@{}".format(instance_ip)
+    return "ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=100 ubuntu@{}".\
+        format(instance_ip)
 
 
 def get_sftp_exec(instance_ip):
     return "nautilus ssh://ubuntu@{}/home/ubuntu".format(instance_ip)
 
 
-def get_image_by_name(name):
+def get_image_by_name(conn, name):
     images = conn.get_all_images(owners=['self'], filters={'name': name})
     if len(images) > 1:
         raise Exception("more than one image with name {}".format(name))
@@ -172,10 +156,10 @@ def get_image_by_name(name):
         return images[0]
 
 
-def save_spot_instance(name, image_name, terminate=True):
-    instance = get_unique_instance(name)
+def save_spot_instance(conn, name, image_name, terminate=True):
+    instance = get_unique_instance(conn, name)
 
-    image = get_image_by_name(image_name)
+    image = get_image_by_name(conn, image_name)
     if image is not None:
         print('deleting old persist image')
         image.deregister()
@@ -203,41 +187,41 @@ def save_spot_instance(name, image_name, terminate=True):
 
     print('creating backup of new persist image...')
     conn.copy_image(
-        source_region=REGION,
+        source_region=config['ec2']['region'],
         source_image_id=image_id,
         name="_" + image_name+'_'+datetime.now().strftime('%Y%m%d%H%M%S%f'),
         description='backup'
     )
 
     if terminate:
-        stop_spot_instance_without_saving(instance.id)
+        stop_spot_instance_without_saving(conn, instance.id)
 
 
-def launch_instance(name, image_id):
-    instance_id, login_exec, sftp_exec = start_spot_instance(name, image_id)
+def launch_instance(conn, name, image_id):
+    instance_id, login_exec, sftp_exec = start_spot_instance(conn, name, image_id)
     sleep(10)  # give the computer a chance to boot up and start SSH server
     subprocess.call(shlex.split(login_exec))
 
 
-def ssh(name):
-    login_exec = get_login_exec(get_unique_instance(name).ip_address)
+def ssh(conn, name):
+    login_exec = get_login_exec(get_unique_instance(conn, name).ip_address)
     print(login_exec)
     subprocess.call(shlex.split(login_exec))
 
 
-def sftp(name):
-    sftp_exec = get_sftp_exec(get_unique_instance(name).ip_address)
+def sftp(conn, name):
+    sftp_exec = get_sftp_exec(get_unique_instance(conn, name).ip_address)
     print(sftp_exec)
     subprocess.Popen(shlex.split(sftp_exec))
 
 
-def stop_all_spot_instances_without_saving():
-    instances = get_running_instances()
+def stop_all_spot_instances_without_saving(conn):
+    instances = get_running_instances(conn)
     for instance in instances:
         if instance.state == 'running' and instance.spot_instance_request_id:
             print("stopping spot instance {}".format(instance.id))
-            stop_spot_instance_without_saving(instance.id)
-    list_instances()
+            stop_spot_instance_without_saving(conn, instance.id)
+    list_instances(conn)
 
 
 def print_instances(instances):
@@ -249,28 +233,29 @@ def print_instances(instances):
             name = '<none>'
 
         print("name: {}, id: {}, state: {}, ip: {}, type: {}, launch time: {}".format(
-            name, instance.id, instance.state, instance.ip_address, instance.instance_type,
+            name, instance.id, instance.state, instance.ip_address,
+            instance.instance_type,
             instance.launch_time))
 
 
-def stop_spot_instance_without_saving(instance_id):
+def stop_spot_instance_without_saving(conn, instance_id):
     print("terminating instance...")
     conn.terminate_instances([instance_id])
 
 
-def list_instances():
-    instances = get_running_instances()
+def list_instances(conn):
+    instances = get_running_instances(conn)
     print_instances(instances)
 
 
-def list_amis():
+def list_amis(conn):
     print('-- AMIs --')
     for image in conn.get_all_images(owners=['self']):
         if image.name[0] != '_':
             print('name: {}, id: {}'.format(image.name, image.id))
 
 
-def create_security_group():
+def create_security_group(conn):
     print(conn.get_all_security_groups())
     security_group = conn.create_security_group(
         'all',
@@ -278,10 +263,13 @@ def create_security_group():
     )
     security_group.authorize('tcp', 0, 65535, '0.0.0.0/0')
     print(conn.get_all_security_groups())
-# create_security_group()
 
 
 def handle_command_line():
+    conn = boto.ec2.connect_to_region(config['ec2']['region'])
+    if conn is None:
+        raise Exception('connection failed')
+
     parser = argparse.ArgumentParser(
         description="start and stop persistent GPU spot instances on Amazon EC2")
 
@@ -326,15 +314,16 @@ def handle_command_line():
             return arg.AMI_ID, name
         else:
             if arg.AMI is not None:
-                return get_image_id_by_name(arg.AMI), arg.AMI
+                return get_image_id_by_name(conn, arg.AMI), arg.AMI
             else:
                 amis = {image.name: image for image in
                         conn.get_all_images(owners=['self'])
                         if image.name[0] != '_'}
                 if len(amis) == 1:
                     return amis.values()[0].id, amis.values()[0]
-                elif DEFAULT_NAME in amis:
-                    return amis[DEFAULT_NAME].id, DEFAULT_NAME
+                elif config['ec2']['default_name'] in amis:
+                    return (amis[config['ec2']['default_name']].id,
+                            config['ec2']['default_name'])
                 elif len(amis) == 0:
                     raise Exception('no AMIs available to load')
                 else:
@@ -346,7 +335,7 @@ def handle_command_line():
             return arg.instance
         else:
             instances = [instance.tags['name'] for instance in
-                         get_running_instances()]
+                         get_running_instances(conn)]
             print("default_start_instance:instances", instances)
             if ami_name not in instances:
                 return ami_name
@@ -367,11 +356,11 @@ def handle_command_line():
             return arg.instance
         else:
             instances = [instance.tags['name'] for instance in
-                         get_running_instances()]
+                         get_running_instances(conn)]
             if len(instances) == 1:
                 return instances[0]
-            elif DEFAULT_NAME in instances:
-                return DEFAULT_NAME
+            elif config['ec2']['default_name'] in instances:
+                return config['ec2']['default_name']
             elif len(instances) == 0:
                 raise Exception('no instances are running')
             else:
@@ -385,7 +374,7 @@ def handle_command_line():
         ami_id, ami_name = default_start_ami_id(arg)
         instance_name = default_start_instance(arg, ami_name)
         print('starting "{}" as "{}"'.format(ami_name, instance_name))
-        start_spot_instance(name=instance_name, image_id=ami_id)
+        start_spot_instance(conn, name=instance_name, image_id=ami_id)
     add_cmd('start', 'start a spot instance' + default_msg,
             cmd_start, [ami_parser, name_parser, ami_id_parser])
 
@@ -393,21 +382,21 @@ def handle_command_line():
         ami_id, ami_name = default_start_ami_id(arg)
         instance_name = default_start_instance(arg, ami_name)
         print('starting "{}" as "{}"'.format(ami_name, instance_name))
-        launch_instance(name=instance_name, image_id=ami_id)
+        launch_instance(conn, name=instance_name, image_id=ami_id)
     add_cmd('launch', 'start a spot instance and log in via SSH' + default_msg,
             cmd_launch, [ami_parser, name_parser, ami_id_parser])
 
     def cmd_ssh(arg):
         name = default_running_instance(arg)
         print('logging into "{}"'.format(name))
-        ssh(name=name)
+        ssh(conn, name=name)
     add_cmd('ssh', 'log into spot instance' + default_name_msg,
             cmd_ssh, [name_parser])
 
     def cmd_sftp(arg):
         name = default_running_instance(arg)
         print('opening sftp connection to "{}"'.format(name))
-        sftp(name=name)
+        sftp(conn, name=name)
     add_cmd('sftp', 'open sftp connection in file browser' + default_name_msg,
             cmd_sftp, [name_parser])
 
@@ -415,7 +404,8 @@ def handle_command_line():
         instance_name = default_running_instance(arg)
         ami_name = default_save_ami_name(arg, instance_name)
         print('saving "{}" as "{}"'.format(instance_name, ami_name))
-        save_spot_instance(name=instance_name, image_name=ami_name, terminate=False)
+        save_spot_instance(conn, name=instance_name, image_name=ami_name,
+                           terminate=False)
     add_cmd('save', 'save spot instance and reboot' + default_msg,
             cmd_save, [name_parser, ami_parser])
 
@@ -423,34 +413,36 @@ def handle_command_line():
         instance_name = default_running_instance(arg)
         ami_name = default_save_ami_name(arg, instance_name)
         print('persisting "{}" as "{}"'.format(instance_name, ami_name))
-        save_spot_instance(name=instance_name, image_name=ami_name)
+        save_spot_instance(conn, name=instance_name, image_name=ami_name)
     add_cmd('persist', 'save and terminate spot instance' + default_msg,
             cmd_persist, [name_parser, ami_parser])
 
     def cmd_kill(arg):
         if arg.all:
             print('killing all instances')
-            stop_all_spot_instances_without_saving()
+            stop_all_spot_instances_without_saving(conn)
         elif arg.name:
-            inst = get_unique_instance(args.name)
+            inst = get_unique_instance(conn, args.name)
             print('killing "{}"'.format(args.name))
-            stop_spot_instance_without_saving(inst.id)
+            stop_spot_instance_without_saving(conn, inst.id)
         else:
             print('must specify instance to kill')
     kill_parser = add_cmd('kill', 'kill spot instance(s)', cmd_kill)
     kill_group = kill_parser.add_mutually_exclusive_group()
-    kill_group.add_argument('name', nargs='?', type=str, help='name of instance to kill')
+    kill_group.add_argument('name', nargs='?', type=str,
+                            help='name of instance to kill')
     kill_group.add_argument('--all', action='store_true')
 
     def cmd_list(arg):
         if arg.instances:
-            list_instances()
+            list_instances(conn)
         elif arg.amis:
-            list_amis()
+            list_amis(conn)
         else:
-            list_instances()
-            list_amis()
-    list_parser = add_cmd('list', 'list all active instances and AMIs associated with account '
+            list_instances(conn)
+            list_amis(conn)
+    list_parser = add_cmd('list',
+                          'list all active instances and AMIs associated with account '
                           '(except AMIs starting with "_")', cmd_list)
     list_group = list_parser.add_mutually_exclusive_group()
     list_group.add_argument('-i', '--instances', action='store_true')
