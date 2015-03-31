@@ -42,7 +42,9 @@ for mod_name in ['numpy',
                  'theano.tensor',
                  'theano.ifelse',
                  'theano.printing',
+                 'theano.gof',
                  'theano.gof.graph',
+                 'gof.graph',
 #                 'yaml',
                  'pandas']:
     sys.modules[mod_name] = mock.Mock()
