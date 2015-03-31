@@ -1,5 +1,5 @@
 pydnn.neuralnet module
-===============
+======================
 
 .. py:module:: pydnn.neuralnet
 

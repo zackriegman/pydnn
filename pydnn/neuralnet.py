@@ -107,13 +107,13 @@ def sigmoid(x):
 def _init_weights(layer_name, activation, weights_shape, bias_shape,
                   fan_in, fan_out, rng, use_bias):
     """
-    Generates initial weights for :class:`_ConvPoolLayer` and
-    :class:`_FullyConnectedLayer` depending on the activation function being
+    Generates initial weights for :metho:`add_conv_pool` and
+    :meth:`add_fully_connected` depending on the activation function being
     used
 
     :param string layer_name: used to label Theano variables for debugging purposes
     :param activation: the activation function used; one of :func:`relu`, :func:`tanh`
-        :func:`sigmoid`, or :class:`PReLULayer`
+        :func:`sigmoid`, or :func:`prelu`
     :param tuple weights_shape: the shape of the weight array
     :param tuple bias_shape: the shape of the bias array
     :param int fan_in: the fan in to the units
@@ -204,8 +204,8 @@ def _two_dimensional(inp, inp_shape):
     Given an input layer transforms its output to 2 dimensions (or if it is
     already 2 dimensions leaves it be).  Used to prepare input for
     layers that only process two dimensional input such as
-    :class:`_FullyConnectedLayer`, :class:`_LogisticRegression` and
-    :class:`_MergeLayer`.
+    :meth:`add_fully_connected`, :class:`_LogisticRegression` and
+    :meth:`merge_pathways`.
 
     :param inp: the input layer
     :return: (transformed input, shape of transformed input)
@@ -854,9 +854,9 @@ class NN(object):
         :meth:`merge_pathways`.
 
         :param int num: number of new pathways to split off from the original
-                    pathway.  If num is None then split just one new pathway.
+                    pathway.  If ``num`` is ``None`` then split just one new pathway.
 
-        :return:  If num is not None, returns a list of the new pathways
+        :return:  If ``num`` is not ``None``, returns a list of the new pathways
                   (not including the original pathway); otherwise returns a single
                   new pathway.
 
@@ -1010,7 +1010,7 @@ class NN(object):
             less than `pool_shape` then pools will be overlapping
         :param activation: activation function to be applied to pool output.
             (One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :func:`prelu`)
-        :param bool batch_normalize: `True` for batch normalization, `False` for no
+        :param bool batch_normalize: ``True`` for batch normalization, ``False`` for no
             batch normalization.
         """
 
@@ -1038,7 +1038,7 @@ class NN(object):
 
         :param int num_units: number of neurons in the fully connected layer
         :param weight_init: activation function that will be applied
-            after the :class:`_FullyConnectedLayer` (used
+            after the fully connected layer (used
             to determine a weight initialization scheme--one of :func:`relu`,
             :func:`tanh`, :func:`sigmoid`, or :func:`prelu`)
         :param bool use_bias: ``True`` to use bias; ``False`` not to.  (When
@@ -1286,8 +1286,8 @@ class NN(object):
         makes the ``givens`` substitution list passed as an argument to
         ``theano.function``.
 
-        :param bool training: `True` if training, `False` if not training.  A flag is
-            created for :class:`_DropoutLayer` and :class:`_BatchNormalizationLayer`
+        :param bool training: ``True`` if training, ``False`` if not training.  A flag is
+            created for :meth:`add_dropout` and :meth:`add_batch_normalization`
             to use when building symbolic graphs since they compute different
             transformations when training and not training.
         :param shared data_x: the training, validation or test data being used by
