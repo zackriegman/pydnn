@@ -711,6 +711,9 @@ class Momentum(LearningRule):
         message += sup_mess
         return stop, message
 
+######################
+# The Neural Network #
+######################
 
 class NN(object):
     """a neural network to which you can add layers and subsequently train on data
@@ -1586,6 +1589,10 @@ class NN(object):
                 zip(self.preprocessor.get_raw_x(), self.preprocessor.get_raw_y(),
                     self.preprocessor.get_files())]
 
+
+##############
+# misc utils #
+##############
 
 def _shared_dataset(x, y=None, borrow=True):
     """ Function that loads the dataset into shared variables
