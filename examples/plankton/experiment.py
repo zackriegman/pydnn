@@ -7487,5 +7487,5 @@ class Experiment012(object):
 if __name__ == '__main__':
     # plankton.make_confusion_matrix_from_saved_network(Experiment037())
     experiment = Experiment()
-    tools.save_output(plankton.config('output') + os.sep + experiment.name + '-output.txt',
+    tools.save_output(plankton.config['output'] + os.sep + experiment.name + '-output.txt',
                       plankton.run_experiment, experiment)
