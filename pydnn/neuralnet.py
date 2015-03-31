@@ -34,8 +34,8 @@ def _debug(string, var):
 
 def relu(x):
     """
-    Used in conjunction with :class:`_NonLinearityLayer` to create a rectified
-    linear unit layer.  The user does not use this directly, but instead
+    Used to create a rectified linear activation layer.
+    The user does not use this directly, but instead
     passes the function as the ``activation`` or ``weight_init`` argument to
     :class:`NN` either  when creating it or adding
     certain kinds of layers.
@@ -47,28 +47,24 @@ def relu(x):
     return x * (x > 0)
     # return T.maximum(x, 0)
 
-def prelu(x):
+def prelu():
     """
+    Used to create a parametric rectified linear activation layer.
+
     Parametric Rectified Linear Units:  http://arxiv.org/pdf/1502.01852.pdf.
 
-    Used in conjunction with :class:`_NonLinearityLayer` to create a
-    parametric rectified
-    linear unit layer.  The user does not use this directly, but instead
+    The user does not use this directly, but instead
     passes the function as the ``activation`` or ``weight_init`` argument to
     :class:`NN` either  when creating it or adding
     certain kinds of layers.  (This is just a dummy function provided for
     API consistency with :func:`relu`, :func:`tanh` and :func:`sigmoid`.  Unlike
-    thise functions it doesn't actually do anything, but merely signals
+    those functions it doesn't actually do anything, but merely signals
     :meth:`add_nonlinearity` to add a parametric rectified nonlinearity)
 
     Note: Don't use l1/l2 regularization with PReLU.  From the paper:
     "It is worth noticing that we do not use weight decay
     (l2 regularization) when updating a_i. A weight decay tends to push a_i
     to zero, and thus biases PReLU toward ReLU."
-
-    :param float x: input to the rectified linear unit
-    :return: 0 if x < 0, otherwise x
-    :rtype: float
     """
 
     return None
@@ -76,8 +72,8 @@ def prelu(x):
 
 def tanh(x):
     """
-    Used in conjunction with :class:`_NonLinearityLayer` to create a rectified
-    linear unit layer.  The user does not use this directly, but instead
+    Used to create a hyperbolic tangent activation layer.
+    The user does not use this directly, but instead
     passes the function as the ``activation`` or ``weight_init`` argument to
     :class:`NN` either  when creating it or adding
     certain kinds of layers.
@@ -91,8 +87,8 @@ def tanh(x):
 
 def sigmoid(x):
     """
-    Used in conjunction with :class:`_NonLinearityLayer` to create a rectified
-    linear unit layer.  The user does not use this directly, but instead
+    Used symbolic logistic activation layer.
+    The user does not use this directly, but instead
     passes the function as the ``activation`` or ``weight_init`` argument to
     :class:`NN` either  when creating it or adding
     certain kinds of layers.
@@ -927,8 +923,8 @@ class NN(object):
         :param weight_init: activation function that will be applied to for
             the purposes of initializing weights (this method will not apply
             the activation function; it must be added separately as a layer).
-            One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :class:`PReLULayer`
-        :param bool use_bias: `True` for bias, `False` for no bias.  No bias should
+            One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :func:`prelu`
+        :param bool use_bias: ``True`` for bias, ``False`` for no bias.  No bias should
             be used when batch normalization layer
             will be processing the output
             of this layer (e.g. when :meth:`add_batch_normalization` is called next).
@@ -1013,7 +1009,7 @@ class NN(object):
         :param tuple pool_stride: distance between pool starting points; if this is
             less than `pool_shape` then pools will be overlapping
         :param activation: activation function to be applied to pool output.
-            (One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :class:`PReLULayer`)
+            (One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :func:`prelu`)
         :param bool batch_normalize: `True` for batch normalization, `False` for no
             batch normalization.
         """
@@ -1033,7 +1029,7 @@ class NN(object):
 
     def add_fully_connected(self, num_units, weight_init, use_bias):
         """
-        Add a layer that does matrix multiply and addition of biases.
+        Add a layer that does a matrix multiply and addition of biases.
         (No nonlinearity is applied
         in this layer because when batch normalization is applied it must
         come between the matrix multiply and the nonlinearity.  A nonlinearity
@@ -1044,7 +1040,7 @@ class NN(object):
         :param weight_init: activation function that will be applied
             after the :class:`_FullyConnectedLayer` (used
             to determine a weight initialization scheme--one of :func:`relu`,
-            :func:`tanh`, :func:`sigmoid`, or :class:`PReLULayer`)
+            :func:`tanh`, :func:`sigmoid`, or :func:`prelu`)
         :param bool use_bias: ``True`` to use bias; ``False`` not to.  (When
             using batch normalization, bias is redundant and thus should not be used.)
         """
@@ -1076,7 +1072,7 @@ class NN(object):
 
         :param int num_units: number of neurons in the hidden layer
         :param activation: activation function to be applied
-        :param bool batch_normalize: `True` for batch normalization, `False` for no
+        :param bool batch_normalize: ``True`` for batch normalization, ``False`` for no
             batch normalization.
         """
         activation = self.activation if activation is None else activation
@@ -1258,11 +1254,11 @@ class NN(object):
     def add_mlp(self, num_hidden_units, activation=None):
         """
         A convenience function for adding a hidden layer and logistic regression
-        layer at the same time.  (Mostly here to mirror deeplearning.net tutorial.
+        layer at the same time.  (Mostly here to mirror deeplearning.net tutorial.)
 
         :param int num_hidden_units: number of hidden units
         :param activation: activation function to be applied to hidden layer output.
-            (One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :class:`PReLULayer`)
+            (One of :func:`relu`, :func:`tanh`, :func:`sigmoid`, or :func:`prelu`)
         """
         activation = self.activation if activation is None else activation
 
