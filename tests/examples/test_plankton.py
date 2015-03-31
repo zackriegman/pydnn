@@ -1,7 +1,7 @@
 import unittest
 from examples.plankton import plankton
 
-from pydnn import nn
+from pydnn import neuralnet as nn
 from pydnn import preprocess as pp
 from os.path import join
 

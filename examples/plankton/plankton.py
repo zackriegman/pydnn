@@ -1,6 +1,6 @@
 __author__ = 'isaac'
 
-from pydnn import nn
+from pydnn import neuralnet as nn
 from pydnn import preprocess as pp
 from pydnn import tools
 from pydnn import data

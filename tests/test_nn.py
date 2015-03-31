@@ -1,4 +1,4 @@
-from pydnn import nn
+from pydnn import neuralnet as nn
 import unittest
 
 

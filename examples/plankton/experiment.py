@@ -3,7 +3,7 @@ __author__ = 'isaac'
 import os
 
 from examples.plankton import plankton
-from pydnn import nn
+from pydnn import neuralnet as nn
 from pydnn import preprocess as pp
 from pydnn import tools
 
@@ -19,7 +19,7 @@ class Experiment(object):
 
     """
     def __init__(p):
-        p.name = 'e082'
+        p.name = 'e098'
         p.num_images = None
         p.train_pct = 80
         p.valid_pct = 15
@@ -389,20 +389,20 @@ class Experiment094(object):
     results:
     Looks like it stopped while it was still improving rapidly so I'm running a
     few more epochs:
-        >>> from examples.plankton import experiment plankton        >>> from pydnn import nn        >>> import examples.plankton.plankton
+        >>> from examples.plankton import experiment plankton        >>> from pydnn import neuralnet        >>> import examples.plankton.plankton
         >>> images, classes, file_indices, labels = plankton.build_training_set()
         >>> data = (images, classes, file_indices)
         >>> e = experiment.Experiment()
         >>> import preprocessors as pp
         >>> data = pp.split_training_data(data, e.batch_size, e.train_pct, e.valid_pct, e.test_pct)
-        >>> net = nn.load('e094_final_net.pkl')
+        >>> net = neuralnet.load('e094_final_net.pkl')
         >>> net.preprocessor.set_data(data)
-        >>> updater = nn.Adam(
+        >>> updater = neuralnet.Adam(
         ...     b1=0.9,
         ...     b2=0.999,
         ...     e=1e-8,
         ...     lmbda=1 - 1e-8,
-        ...     learning_rate_annealer=nn.LearningRateDecay(
+        ...     learning_rate_annealer=neuralnet.LearningRateDecay(
         ...         learning_rate=0.0006,
         ...         decay=.05))
         >>> net.train(updater, 500, 0, e.l1_reg, e.l2_reg)
