@@ -22,16 +22,23 @@ setup(
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
         'Topic :: Scientific/Engineering :: Image Recognition',
         'Topic :: Scientific/Engineering :: Information Analysis',
-        'Topic :: Software Development :: Libraries'
-        ],
+        'Topic :: Software Development :: Libraries'],
     keywords='neural network deep learning AI machine learning',
     author='Isaac Kriegman',
     author_email='zackriegman@gmail.com',
     url='https://github.com/zackriegman/pydnn',
     license='MIT',
     packages=find_packages(),
-    include_package_data=True,
+    package_data={
+        'pydnn': ['aws_util.conf'],
+        'examples.plankton': ['plankton.conf']},
     zip_safe=False,
-    install_requires=['numpy', 'scipy', 'Theano>=0.7.0rc1.dev', 'pyyaml', 'boto', 'pandas'],
+    install_requires=[
+        'numpy',
+        'scipy',
+        'Theano>=0.7.0rc1.dev',
+        'pyyaml',
+        'boto',
+        'pandas'],
     extras_require={'docs': ['Sphinx']},
     )
