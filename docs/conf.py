@@ -45,6 +45,8 @@ for mod_name in ['numpy',
                  'theano.gof',
                  'theano.gof.graph',
                  'gof.graph',
+                 'boto.ec2',
+                 'boto.ec2.blockdevicemapping',
 #                 'yaml',
                  'pandas']:
     sys.modules[mod_name] = mock.Mock()
