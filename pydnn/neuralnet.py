@@ -906,9 +906,9 @@ class NN(object):
         """
         self.merge_pathways(self.new_pathway(channel))
 
-    ##########
-    # Layers #
-    ##########
+##########
+# Layers #
+##########
 
     def add_conv_pool(self, num_filters, filter_shape, pool_shape,
                       pool_stride=None, weight_init=None, use_bias=True):
@@ -1268,6 +1268,10 @@ class NN(object):
         self.add_hidden(num_hidden_units, activation)
         self.add_logistic()
 
+########
+# Util #
+########
+
     def _get_params_grad(self):
         return self.params
 
@@ -1317,6 +1321,10 @@ class NN(object):
             else:
                 givens[self.train_flag] = np.int8(0)
         return givens
+
+##########################
+# Training and Inference #
+##########################
 
     def train(self, updater, epochs=200, final_epochs=0, l1_reg=0, l2_reg=0):
         """
@@ -1557,6 +1565,10 @@ class NN(object):
         probs = probs[:-num_padded]
 
         return preds, probs
+
+####################
+# Confusion Matrix #
+####################
 
     def make_confusion_matrix(self, data, classes, files):
         """

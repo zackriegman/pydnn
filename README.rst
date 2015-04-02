@@ -53,6 +53,12 @@ Installation
 
 pip install pydnn
 
+=========
+Home Page
+=========
+
+https://github.com/zackriegman/pydnn
+
 =====
 Usage
 =====
